@@ -29,4 +29,23 @@ public interface Constants {
      */
     String JDBC_PASSWORD = "jdbc.password";
 
+    /**
+     * Spark 作业名称
+     */
+    String SPARK_APP_NAME_SESSION = "UserVisitSessionAnalyzeSpark";
+
+    /**
+     * spark 作业本地模式
+     */
+    String SPARK_LOCAL = "spark.local";
+
+
+    /**
+     * 参数相关的常量
+     */
+    String PARAM_START_DATE = "startDate";
+
+
+    String PARAM_END_DATE = "endDate";
+
 }

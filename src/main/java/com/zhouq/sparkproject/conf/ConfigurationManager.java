@@ -88,5 +88,20 @@ public class ConfigurationManager {
         return Integer.valueOf(getProperty(key));
     }
 
+    /**
+     * 获取Boolean 类型的值
+     * @param key
+     * @return
+     */
+    public static boolean getBoolean(String key){
+        String property = getProperty(key);
+        try {
+            return Boolean.valueOf(property);
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        return false;
+
+    }
 
 }
