@@ -1,7 +1,5 @@
 package com.zhouq.sparkproject.conf;
 
-import org.apache.spark.sql.columnar.INT;
-
 import java.io.InputStream;
 import java.util.Properties;
 

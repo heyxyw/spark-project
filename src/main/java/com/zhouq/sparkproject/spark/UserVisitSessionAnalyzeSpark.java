@@ -8,6 +8,7 @@ import com.zhouq.sparkproject.dao.impl.DAOFactory;
 import com.zhouq.sparkproject.domain.Task;
 import com.zhouq.sparkproject.test.MockData;
 import com.zhouq.sparkproject.util.ParamUtils;
+import com.zhouq.sparkproject.util.StringUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -19,6 +20,8 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.hive.HiveContext;
 import scala.Tuple2;
+
+import java.util.Iterator;
 
 /**
  * 用户访问session 分析Spark 作业
@@ -150,13 +153,53 @@ public class UserVisitSessionAnalyzeSpark {
         JavaPairRDD<String, Iterable<Row>> sessionid2ActionsRDD = sessionid2ActionRDD.groupByKey();
 
         // 对每一个 session 分组进行聚合，将session 中所有的搜索词和点击品类都聚合起来。
-        JavaPairRDD<String, String> session2PartAggrInfoRDD = sessionid2ActionsRDD.mapToPair(new PairFunction<Tuple2<String, Iterable<Row>>, String, String>() {
-            @Override
-            public Tuple2<String, String> call(Tuple2<String, Iterable<Row>> stringIterableTuple2) throws Exception {
+        JavaPairRDD<String, String> session2PartAggrInfoRDD = sessionid2ActionsRDD.mapToPair(
+                new PairFunction<Tuple2<String, Iterable<Row>>, String, String>() {
+                    @Override
+                    public Tuple2<String, String> call(Tuple2<String, Iterable<Row>> tuple) throws Exception {
+                        String sessionid =tuple._1;
+                        Iterator<Row> iterator = tuple._2.iterator();
+
+                        StringBuffer searchKeywordsBuffer = new StringBuffer();
+                        StringBuffer clickCategoryIdsBuffer = new StringBuffer();
+
+                        while (iterator.hasNext()){
+                            Row row = iterator.next();
+
+                            String searchKeyWord = row.getString(5);
+                            Long clickCategoryId = row.getLong(6);
+
+                            // 实际数据中不可能都包含这些搜索词语和 点击品类
+                            // 搜索行为才会有搜索关键字 searchKeyword
+                            // 点击品类的行为才有 clickCategoryId
+                            // 所以，任何一个行为数据是不可能有两个字段的。所以数据是可能出现 null  的情况。
+
+                            //我们决定是否要将搜索词跟品类id 拼接到字符串中去
+                            // 首先要满足：不是null  值。
+                            // 其次，之前的字符串中还有没有搜索关键词或者点击品类id ,没有再拼接。
+
+                            if (StringUtils.isNotEmpty(searchKeyWord)){
+                                if (!searchKeywordsBuffer.toString().contains(searchKeyWord)){
+                                    searchKeywordsBuffer.append(searchKeyWord+",");
+                                }
+                            }
+
+                            if (clickCategoryId != null){
+                                if (!clickCategoryIdsBuffer.toString().contains(String.valueOf(clickCategoryId))){
+                                    clickCategoryIdsBuffer.append(clickCategoryId +",");
+                                }
+                            }
+
+                            String searchKeywords = StringUtils.trimComma(searchKeywordsBuffer.toString());
+                            String clickGategoryIds = StringUtils.trimComma(clickCategoryIdsBuffer.toString());
 
 
-                return null;
-            }
+
+
+                        }
+
+                        return null;
+                    }
         });
 
 
