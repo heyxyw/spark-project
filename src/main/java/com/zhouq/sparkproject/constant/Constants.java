@@ -49,12 +49,12 @@ public interface Constants {
     /**
      *
      */
-    String FILED_SESSION_ID = "session_id";
+    String FIELD_SESSION_ID = "session_id";
 
     /**
      *
      */
-    String FILED_SEARCH_KEYWORDS = "search_keyword";
+    String FIELD_SEARCH_KEYWORDS = "search_keyword";
 
     /**
      *

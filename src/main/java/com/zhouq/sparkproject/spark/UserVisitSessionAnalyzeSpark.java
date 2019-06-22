@@ -219,8 +219,8 @@ public class UserVisitSessionAnalyzeSpark {
                          */
 
 
-                        String partAggrInfo = Constants.FILED_SESSION_ID + "=" + sessionid + "|"
-                                + Constants.FILED_SEARCH_KEYWORDS + "=" + searchKeywords + "|"
+                        String partAggrInfo = Constants.FIELD_SESSION_ID + "=" + sessionid + "|"
+                                + Constants.FIELD_SEARCH_KEYWORDS + "=" + searchKeywords + "|"
                                 + Constants.FIELD_CLICK_CATEGORY_IDS + "=" + clickGategoryIds;
 
                         return new Tuple2<Long, String>(userId, partAggrInfo);
@@ -251,7 +251,7 @@ public class UserVisitSessionAnalyzeSpark {
                         String partAggrInfo = tuple._2._1;
                         Row userInfoRow = tuple._2._2;
 
-                        String sessionId = StringUtils.getFieldFromConcatString(partAggrInfo, "\\|", Constants.FILED_SESSION_ID);
+                        String sessionId = StringUtils.getFieldFromConcatString(partAggrInfo, "\\|", Constants.FIELD_SESSION_ID);
 
                         //解析 userinfo 拼接上去
                         int age = userInfoRow.getInt(3);
