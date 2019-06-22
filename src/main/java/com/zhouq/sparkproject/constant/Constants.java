@@ -1,8 +1,6 @@
 package com.zhouq.sparkproject.constant;
 
 /**
- *
- *
  * @Author: zhouq
  * @Date: 2019-06-16
  */
@@ -47,5 +45,28 @@ public interface Constants {
 
 
     String PARAM_END_DATE = "endDate";
+
+    /**
+     *
+     */
+    String FILED_SESSION_ID = "session_id";
+
+    /**
+     *
+     */
+    String FILED_SEARCH_KEYWORDS = "search_keyword";
+
+    /**
+     *
+     */
+    String FIELD_CLICK_CATEGORY_IDS = "click_category_id";
+
+    String FIELD_AGE = "age";
+
+    String FIELD_PROFESSIONAL = "professional";
+
+    String FIELD_CITY = "city";
+
+    String FIELD_SEX = "sex";
 
 }
