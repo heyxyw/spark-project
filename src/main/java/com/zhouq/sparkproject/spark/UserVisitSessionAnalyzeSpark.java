@@ -11,6 +11,7 @@ import com.zhouq.sparkproject.util.DateUtils;
 import com.zhouq.sparkproject.util.ParamUtils;
 import com.zhouq.sparkproject.util.StringUtils;
 import com.zhouq.sparkproject.util.ValidUtils;
+import org.apache.spark.Accumulator;
 import org.apache.spark.SparkConf;
 import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -85,18 +86,22 @@ public class UserVisitSessionAnalyzeSpark {
         // 到现在为止，获取得数据为 <sessionid,(sessionid,searchkeyword,clickCategory,userid,username,xxxx)>
         JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(actionRDD, sqlContext);
 
-        System.out.println(sessionid2AggrInfoRDD.count());
-
-        List<Tuple2<String, String>> tuple2List = sessionid2AggrInfoRDD.take(10);
-        for (Tuple2<String, String> tuple2 : tuple2List) {
-            System.out.println(tuple2);
-        }
+//        System.out.println(sessionid2AggrInfoRDD.count());
+//
+//        List<Tuple2<String, String>> tuple2List = sessionid2AggrInfoRDD.take(10);
+//        for (Tuple2<String, String> tuple2 : tuple2List) {
+//            System.out.println(tuple2);
+//        }
 
         // 接着，就要针对session粒度的聚合数据，按照使用者指定的筛选参数进行数据过滤
         // 相当于我们自己编写的算子，是要访问外面的任务参数对象的
         // 所以，大家记得我们之前说的，匿名内部类（算子函数），访问外部对象，是要给外部对象使用final修饰的
-        JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD = filterSession(sessionid2AggrInfoRDD, parseObject);
 
+
+        // 重构，同时进行过滤和统计
+        Accumulator<String> sessionAggrStatAccumulator = sc.accumulator("", new SessionAggrStatAccumulator());
+
+        JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD = filterSession(sessionid2AggrInfoRDD, parseObject, sessionAggrStatAccumulator);
 
         /**
          *  session聚合统计（统计出访问时长和访问步长，各个区间的session数量占总session数量的比例）
@@ -390,11 +395,12 @@ public class UserVisitSessionAnalyzeSpark {
      * 过滤 session 数据
      *
      * @param sessionid2AggrInfoRDD
-     * @param params
+     * @param taskParam
+     * @param sessionAggrStatAccumulator
      * @return
      */
     private static JavaPairRDD<String, String> filterSession(
-            JavaPairRDD<String, String> sessionid2AggrInfoRDD, final JSONObject taskParam) {
+            JavaPairRDD<String, String> sessionid2AggrInfoRDD, final JSONObject taskParam, final Accumulator<String> sessionAggrStatAccumulator) {
 
         // 为了使用我们后面的ValieUtils，所以，首先将所有的筛选参数拼接成一个连接串
         String startAge = ParamUtils.getParam(taskParam, Constants.PARAM_START_AGE);
@@ -472,8 +478,72 @@ public class UserVisitSessionAnalyzeSpark {
                             return false;
                         }
 
+
+                        // 如果经过了之前的多个过滤条件之后，程序能够走到这里
+                        // 那么就说明，该session是通过了用户指定的筛选条件的，也就是需要保留的session
+                        // 那么就要对session的访问时长和访问步长，进行统计，根据session对应的范围
+                        // 进行相应的累加计数
+
+                        // 主要走到这一步，那么就是需要计数的session
+                        sessionAggrStatAccumulator.add(Constants.SESSION_COUNT);
+
+                        //计算出 session 的访问时长和访问步长的范围，并进行响应的累计
+
+                        long visitLength = Long.valueOf(StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_VISIT_LENGTH));
+                        long stepLength = Long.valueOf(StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_STEP_LENGTH));
+
+                        calculateVisitLength(visitLength);
+                        calculateStepLength(stepLength);
+
                         return true;
                     }
+
+                    /**
+                     * 计算访问时长范围
+                     * @param visitLength
+                     */
+                    private void calculateVisitLength(long visitLength) {
+                        if (visitLength >= 1 && visitLength <= 3) {
+                            sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_1s_3s);
+                        } else if (visitLength >= 4 && visitLength <= 6) {
+                            sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_4s_6s);
+                        } else if (visitLength >= 7 && visitLength <= 9) {
+                            sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_7s_9s);
+                        } else if (visitLength >= 10 && visitLength <= 30) {
+                            sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_10s_30s);
+                        } else if (visitLength > 30 && visitLength <= 60) {
+                            sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_30s_60s);
+                        } else if (visitLength > 60 && visitLength <= 180) {
+                            sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_1m_3m);
+                        } else if (visitLength > 180 && visitLength <= 600) {
+                            sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_3m_10m);
+                        } else if (visitLength > 600 && visitLength <= 1800) {
+                            sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_10m_30m);
+                        } else if (visitLength > 1800) {
+                            sessionAggrStatAccumulator.add(Constants.TIME_PERIOD_30m);
+                        }
+                    }
+
+                    /**
+                     * 计算访问步长范围
+                     * @param stepLength
+                     */
+                    private void calculateStepLength(long stepLength) {
+                        if (stepLength >= 1 && stepLength <= 3) {
+                            sessionAggrStatAccumulator.add(Constants.STEP_PERIOD_1_3);
+                        } else if (stepLength >= 4 && stepLength <= 6) {
+                            sessionAggrStatAccumulator.add(Constants.STEP_PERIOD_4_6);
+                        } else if (stepLength >= 7 && stepLength <= 9) {
+                            sessionAggrStatAccumulator.add(Constants.STEP_PERIOD_7_9);
+                        } else if (stepLength >= 10 && stepLength <= 30) {
+                            sessionAggrStatAccumulator.add(Constants.STEP_PERIOD_10_30);
+                        } else if (stepLength > 30 && stepLength <= 60) {
+                            sessionAggrStatAccumulator.add(Constants.STEP_PERIOD_30_60);
+                        } else if (stepLength > 60) {
+                            sessionAggrStatAccumulator.add(Constants.STEP_PERIOD_60);
+                        }
+                    }
+
                 });
 
         return fliteredSessionid2AggrInfoRDD;
