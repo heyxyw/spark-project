@@ -3,14 +3,17 @@ package com.zhouq.sparkproject.spark;
 import com.alibaba.fastjson.JSONObject;
 import com.zhouq.sparkproject.conf.ConfigurationManager;
 import com.zhouq.sparkproject.constant.Constants;
+import com.zhouq.sparkproject.dao.ISessionAggrStatDAO;
 import com.zhouq.sparkproject.dao.ITaskDao;
 import com.zhouq.sparkproject.dao.impl.DAOFactory;
+import com.zhouq.sparkproject.domain.SessionAggrStat;
 import com.zhouq.sparkproject.domain.Task;
 import com.zhouq.sparkproject.test.MockData;
 import com.zhouq.sparkproject.util.DateUtils;
 import com.zhouq.sparkproject.util.ParamUtils;
 import com.zhouq.sparkproject.util.StringUtils;
 import com.zhouq.sparkproject.util.ValidUtils;
+import com.zhouq.sparkproject.util.NumberUtils;
 import org.apache.spark.Accumulator;
 import org.apache.spark.SparkConf;
 import org.apache.spark.SparkContext;
@@ -103,7 +106,30 @@ public class UserVisitSessionAnalyzeSpark {
 
         JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD = filterSession(sessionid2AggrInfoRDD, parseObject, sessionAggrStatAccumulator);
 
+
         /**
+         * 重点：对于Accumulator这种分布式累加计算的变量的使用，有一个重要说明
+         *
+         * 在 Accumulator 中，获取数据必须是在某一个 action 之后再进行的。
+         * 如果没有action的话，那么程序根本就不会运行的。
+         *
+         * 是不是在calculateAndPersisitAggrStat方法之后，运行一个action操作，比如count、take
+         * 不对！！！ 他们只是一个 transform 操作，并不是一个 action 操作。
+         *
+         * 必须把能够触发job执行的操作，放在最终写入MySQL方法之前
+         *
+         * 计算出来的结果，在J2EE中，是怎么显示的，是用两张柱状图显示
+         */
+
+        System.out.println(filteredSessionid2AggrInfoRDD.count());
+
+        // 计算出各个范围的session占比，并写入MySQL
+        calculateAndPersistAggrStat(sessionAggrStatAccumulator.value(), taskId);
+
+
+        /**
+         * 重点:
+         *
          *  session聚合统计（统计出访问时长和访问步长，各个区间的session数量占总session数量的比例）
          *
          * 如果不进行重构，直接来实现，思路：
@@ -318,6 +344,7 @@ public class UserVisitSessionAnalyzeSpark {
                         long visitLength = (endTime.getTime() - startTime.getTime()) / 1000;
 
                         /**
+                         * 重点
                          * 思考？
                          * 我们返回的数据格式，即是<sessionid,partAggrInfo>
                          * 但是，我们这一步聚合完成以后，还是需要将每一行数据跟对应的用户信息进行聚合
@@ -420,7 +447,7 @@ public class UserVisitSessionAnalyzeSpark {
                 + (keywords != null ? Constants.PARAM_KEYWORDS + "=" + keywords + "|" : "")
                 + (categoryIds != null ? Constants.PARAM_CATEGORY_IDS + "=" + categoryIds : "");
 
-        if (_parameter.endsWith("\\|")) {
+        if (_parameter.endsWith("|")) {
             _parameter = _parameter.substring(0, _parameter.length() - 1);
         }
 
@@ -436,6 +463,8 @@ public class UserVisitSessionAnalyzeSpark {
                         String aggrInfo = tuple._2;
                         //先按照年龄筛选进行过滤，
                         //范围在（startAge,endAge） 之间的
+
+                        System.out.println(aggrInfo + "..." + parameter);
                         if (!ValidUtils.between(aggrInfo, Constants.FIELD_AGE,
                                 parameter, Constants.PARAM_START_AGE, Constants.PARAM_END_AGE)) {
                             return false;
@@ -547,5 +576,89 @@ public class UserVisitSessionAnalyzeSpark {
                 });
 
         return fliteredSessionid2AggrInfoRDD;
+    }
+
+    private static void calculateAndPersistAggrStat(String value, long taskid) {
+        // 从Accumulator统计串中获取值
+
+        long session_count = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.SESSION_COUNT));
+
+        long visit_length_1s_3s = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.TIME_PERIOD_1s_3s));
+        long visit_length_4s_6s = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.TIME_PERIOD_4s_6s));
+        long visit_length_7s_9s = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.TIME_PERIOD_7s_9s));
+        long visit_length_10s_30s = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.TIME_PERIOD_10s_30s));
+        long visit_length_30s_60s = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.TIME_PERIOD_30s_60s));
+
+        long visit_length_1m_3m = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.TIME_PERIOD_1m_3m));
+        long visit_length_3m_10m = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.TIME_PERIOD_3m_10m));
+        long visit_length_10m_30m = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.TIME_PERIOD_10m_30m));
+        long visit_length_30m = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.TIME_PERIOD_30m));
+
+        long step_length_1_3 = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.STEP_PERIOD_1_3));
+        long step_length_4_6 = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.STEP_PERIOD_4_6));
+        long step_length_7_9 = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.STEP_PERIOD_7_9));
+
+        long step_length_10_30 = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.STEP_PERIOD_10_30));
+        long step_length_30_60 = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.STEP_PERIOD_30_60));
+        long step_length_60 = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.STEP_PERIOD_60));
+
+        // 计算各个访问时长和访问步长的范围
+        double visit_length_1s_3s_ratio = NumberUtils.formatDouble(
+                (double) visit_length_1s_3s / (double) session_count, 2);
+        double visit_length_4s_6s_ratio = NumberUtils.formatDouble(
+                (double) visit_length_4s_6s / (double) session_count, 2);
+        double visit_length_7s_9s_ratio = NumberUtils.formatDouble(
+                (double) visit_length_7s_9s / (double) session_count, 2);
+        double visit_length_10s_30s_ratio = NumberUtils.formatDouble(
+                (double) visit_length_10s_30s / (double) session_count, 2);
+        double visit_length_30s_60s_ratio = NumberUtils.formatDouble(
+                (double) visit_length_30s_60s / (double) session_count, 2);
+        double visit_length_1m_3m_ratio = NumberUtils.formatDouble(
+                (double) visit_length_1m_3m / (double) session_count, 2);
+        double visit_length_3m_10m_ratio = NumberUtils.formatDouble(
+                (double) visit_length_3m_10m / (double) session_count, 2);
+        double visit_length_10m_30m_ratio = NumberUtils.formatDouble(
+                (double) visit_length_10m_30m / (double) session_count, 2);
+        double visit_length_30m_ratio = NumberUtils.formatDouble(
+                (double) visit_length_30m / (double) session_count, 2);
+
+        double step_length_1_3_ratio = NumberUtils.formatDouble(
+                (double) step_length_1_3 / (double) session_count, 2);
+        double step_length_4_6_ratio = NumberUtils.formatDouble(
+                (double) step_length_4_6 / (double) session_count, 2);
+        double step_length_7_9_ratio = NumberUtils.formatDouble(
+                (double) step_length_7_9 / (double) session_count, 2);
+        double step_length_10_30_ratio = NumberUtils.formatDouble(
+                (double) step_length_10_30 / (double) session_count, 2);
+        double step_length_30_60_ratio = NumberUtils.formatDouble(
+                (double) step_length_30_60 / (double) session_count, 2);
+        double step_length_60_ratio = NumberUtils.formatDouble(
+                (double) step_length_60 / (double) session_count, 2);
+
+        // 将统计结果封装为Domain对象
+        SessionAggrStat sessionAggrStat = new SessionAggrStat();
+        sessionAggrStat.setTaskid(taskid);
+        sessionAggrStat.setSession_count(session_count);
+        sessionAggrStat.setVisit_length_1s_3s_ratio(visit_length_1s_3s_ratio);
+        sessionAggrStat.setVisit_length_4s_6s_ratio(visit_length_4s_6s_ratio);
+        sessionAggrStat.setVisit_length_7s_9s_ratio(visit_length_7s_9s_ratio);
+        sessionAggrStat.setVisit_length_10s_30s_ratio(visit_length_10s_30s_ratio);
+        sessionAggrStat.setVisit_length_30s_60s_ratio(visit_length_30s_60s_ratio);
+        sessionAggrStat.setVisit_length_1m_3m_ratio(visit_length_1m_3m_ratio);
+        sessionAggrStat.setVisit_length_3m_10m_ratio(visit_length_3m_10m_ratio);
+        sessionAggrStat.setVisit_length_10m_30m_ratio(visit_length_10m_30m_ratio);
+        sessionAggrStat.setVisit_length_30m_ratio(visit_length_30m_ratio);
+        sessionAggrStat.setStep_length_1_3_ratio(step_length_1_3_ratio);
+        sessionAggrStat.setStep_length_4_6_ratio(step_length_4_6_ratio);
+        sessionAggrStat.setStep_length_7_9_ratio(step_length_7_9_ratio);
+        sessionAggrStat.setStep_length_10_30_ratio(step_length_10_30_ratio);
+        sessionAggrStat.setStep_length_30_60_ratio(step_length_30_60_ratio);
+        sessionAggrStat.setStep_length_60_ratio(step_length_60_ratio);
+
+
+        // 调用对应的DAO插入统计结果
+        ISessionAggrStatDAO sessionAggrStatDAO = DAOFactory.getSessionAggrStatDAO();
+
+        sessionAggrStatDAO.insert(sessionAggrStat);
     }
 }
