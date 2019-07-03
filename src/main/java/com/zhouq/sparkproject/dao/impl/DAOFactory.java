@@ -1,6 +1,8 @@
 package com.zhouq.sparkproject.dao.impl;
 
 import com.zhouq.sparkproject.dao.ISessionAggrStatDAO;
+import com.zhouq.sparkproject.dao.ISessionDetailDAO;
+import com.zhouq.sparkproject.dao.ISessionRandomExtractDAO;
 import com.zhouq.sparkproject.dao.ITaskDao;
 
 /**
@@ -26,5 +28,22 @@ public class DAOFactory {
         return new SessionAggrStatDAOImpl();
     }
 
+    /**
+     * 获取随机抽取 session DAO
+     *
+     * @return
+     */
+    public static ISessionRandomExtractDAO getSessionRandomExtractDAO() {
+        return new SessionRandomExtractDAOImpl();
+    }
+
+    /**
+     * 获取 SessionDetail DAO
+     *
+     * @return
+     */
+    public static ISessionDetailDAO getSessionDetailDAO() {
+        return new SessionDetailDAOImpl();
+    }
 
 }
