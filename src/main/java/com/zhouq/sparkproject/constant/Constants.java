@@ -57,6 +57,7 @@ public interface Constants {
 
     String FIELD_VISIT_LENGTH = "visitLength";
     String FIELD_STEP_LENGTH = "stepLength";
+
     String FIELD_START_TIME = "startTime";
     String FIELD_CLICK_COUNT = "clickCount";
     String FIELD_ORDER_COUNT = "orderCount";
