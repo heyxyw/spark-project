@@ -31,7 +31,6 @@ import scala.Tuple2;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 用户访问session 分析Spark 作业
@@ -107,6 +106,7 @@ public class UserVisitSessionAnalyzeSpark {
 
         JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD = filterSession(sessionid2AggrInfoRDD, parseObject, sessionAggrStatAccumulator);
 
+
         /**
          * 重点：对于Accumulator这种分布式累加计算的变量的使用，有一个重要说明
          *
@@ -122,17 +122,6 @@ public class UserVisitSessionAnalyzeSpark {
          */
 
         System.out.println(filteredSessionid2AggrInfoRDD.count());
-
-
-        /**
-         * 特别说明：我们知道，要将上一个功能的session 聚合统计的数据获取到。就必须是在一个action 操作
-         * 触发job 之后才能从 Accumulator 中获取数据，否则是获取不到数据的，因为job 没有执行，Accumulator 的值
-         * 为空，所以我们这里，将随机抽取session 的功能代码实现，放在session 聚合统计功能的最终计算和写库之前
-         * 因为随机抽取功能中，有一个 countByKey 算子，是 action 操作，会触发 job 执行。
-         */
-
-        randomExtractSession(filteredSessionid2AggrInfoRDD);
-
 
         // 计算出各个范围的session占比，并写入MySQL
         calculateAndPersistAggrStat(sessionAggrStatAccumulator.value(), taskId);
@@ -359,7 +348,7 @@ public class UserVisitSessionAnalyzeSpark {
                          * 思考？
                          * 我们返回的数据格式，即是<sessionid,partAggrInfo>
                          * 但是，我们这一步聚合完成以后，还是需要将每一行数据跟对应的用户信息进行聚合
-                         * 那么，问题就来了。如果跟用户信息进行聚合，那么key 就不应该是sessionID
+                         * 那么，问题就来来。如果跟用户信息进行聚合，那么key 就不应该是sessionID
                          * 就应该是userID ,才能够跟<userid,Row> 格式的数据进行聚合
                          * 如果我们这里直接返回 <sessionid,partAggrInfo> 还得进行一次maptopair 算子
                          * 将RDD 映射成 <userid，partAggrInfo> 的格式，那么就多此一举咯。
@@ -378,8 +367,7 @@ public class UserVisitSessionAnalyzeSpark {
                                 + Constants.FIELD_SEARCH_KEYWORDS + "=" + searchKeywords + "|"
                                 + Constants.FIELD_CLICK_CATEGORY_IDS + "=" + clickGategoryIds + "|"
                                 + Constants.FIELD_VISIT_LENGTH + "=" + visitLength + "|"
-                                + Constants.FIELD_STEP_LENGTH + "=" + stepLength + "|"
-                                + Constants.FIELD_START_TIME + "=" + DateUtils.formatDate(startTime);
+                                + Constants.FIELD_STEP_LENGTH + "=" + stepLength;
 
                         return new Tuple2<Long, String>(userId, partAggrInfo);
                     }
@@ -590,46 +578,6 @@ public class UserVisitSessionAnalyzeSpark {
         return fliteredSessionid2AggrInfoRDD;
     }
 
-
-    /**
-     * 随机抽取 session
-     *
-     * @param sessionid2AggrInfoRDD
-     */
-    private static void randomExtractSession(JavaPairRDD<String, String> sessionid2AggrInfoRDD) {
-        // 第一步，计算每天每小时的session 数量，获取<yyyy-MM-dd_HH,sessionid> 格式的数据
-        JavaPairRDD<String, String> time2sessionidRDD = sessionid2AggrInfoRDD.mapToPair(new PairFunction<Tuple2<String, String>, String, String>() {
-            @Override
-            public Tuple2<String, String> call(Tuple2<String, String> tuple) throws Exception {
-                String sessionid = tuple._1;
-                String aggrInfo = tuple._2;
-                String startTime = StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_START_TIME);
-                String dateHour = DateUtils.getDateHour(startTime);
-
-                /** 注意点：思考一下 》？
-                 *
-                 * 由于我们后面还需要把抽取出来的session聚合 数据写入 session_random_extract 表。
-                 * 所以这里我们第一个RDD 的value 就是不是sessionid 了，而是 session 的聚合数据
-                 */
-//                return new Tuple2<>(dateHour, sessionid);
-                return new Tuple2<>(dateHour, aggrInfo);
-            }
-        });
-
-        // 得到每天每个小时session 数量
-        Map<String, Object> countMap = time2sessionidRDD.countByKey();
-
-
-
-
-    }
-
-    /**
-     * 计算各session 范围占比，并写入MySQL
-     *
-     * @param value
-     * @param taskid
-     */
     private static void calculateAndPersistAggrStat(String value, long taskid) {
         // 从Accumulator统计串中获取值
 
