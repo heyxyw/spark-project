@@ -843,7 +843,8 @@ public class UserVisitSessionAnalyzeSpark {
 
                 List<Integer> extractIndexList = dateHourExtractMap.get(date).get(hour);
 
-                //遍历 iterator ,如果发现需要抽取的 indexList 包含了这个索引,则将数据封装写入MySQL,并且将 sessionid 加入 extractSessionids
+                // 遍历 iterator ,如果发现需要抽取的 indexList 包含了这个索引,则将数据封装写入MySQL,
+                // 并且将 sessionid 加入 extractSessionids
 
                 ISessionRandomExtractDAO sessionRandomExtractDAO =
                         DAOFactory.getSessionRandomExtractDAO();
@@ -1004,10 +1005,21 @@ public class UserVisitSessionAnalyzeSpark {
          * 所以，这里就不能使用 join 操作，要使用 leftOuterJoin 操作，也就是说，如果 categoryidRDD 不能join 到自己的某个数据，，
          * 比如点击、或者下单、或支付次数，那么该 categoryidRDD 还是需要保留下来的。
          *
-         *  只是没有 join 到的数据为 0  就行了
+         * 只是没有 join 到的数据为 0  就行了
          *
          */
 
+        JavaPairRDD<Long, String> categoryid2countRDD = joinCateGoryAndData(
+                categoryidRDD, clickCategoryId2CountRDD, orderCategoryId2CountRDD, payCategoryId2CountRDD);
+
+
+        /**
+         * 第四步：定义二次排序的 key
+         */
+
+        /**
+         * 第五步：将数据映射成<SortKey,>
+         */
 
     }
 
