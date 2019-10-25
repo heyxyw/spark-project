@@ -1018,8 +1018,32 @@ public class UserVisitSessionAnalyzeSpark {
          */
 
         /**
-         * 第五步：将数据映射成<SortKey,>
+         * 第五步：将数据映射成<CategorySortKey,info> 格式的RDD，然后进行二次排序
          */
+        JavaPairRDD<CategorySortKey, String> sortKey2countRDD = categoryid2countRDD.mapToPair(new PairFunction<Tuple2<Long, String>, CategorySortKey, String>() {
+            @Override
+            public Tuple2<CategorySortKey, String> call(Tuple2<Long, String> tuple) throws Exception {
+
+                String countInfo = tuple._2;
+                Long clickCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_CLICK_COUNT));
+                Long orderCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_ORDER_COUNT));
+                Long payCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_PAY_COUNT));
+
+                CategorySortKey categorySortKey = new CategorySortKey(clickCount, orderCount, payCount);
+
+                return new Tuple2<>(categorySortKey, countInfo);
+            }
+        });
+
+        // 进行倒序排序
+        JavaPairRDD<CategorySortKey, String> sortedCategorycountRDD = sortKey2countRDD.sortByKey(false);
+
+        /**
+         * 第六步，用take（10） 去除top 10取出热门商品，写入mysql
+         */
+
+
+
 
     }
 

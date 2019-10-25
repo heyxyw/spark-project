@@ -123,6 +123,14 @@ public class CategorySortKey implements Ordered<CategorySortKey> {
         return 0;
     }
 
+    public CategorySortKey(long clickCount, long orderCount, long payCount) {
+        this.clickCount = clickCount;
+        this.orderCount = orderCount;
+        this.payCount = payCount;
+    }
+
+    public CategorySortKey() {
+    }
 
     public long getClickCount() {
         return clickCount;
