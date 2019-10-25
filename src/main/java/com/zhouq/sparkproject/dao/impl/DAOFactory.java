@@ -1,9 +1,6 @@
 package com.zhouq.sparkproject.dao.impl;
 
-import com.zhouq.sparkproject.dao.ISessionAggrStatDAO;
-import com.zhouq.sparkproject.dao.ISessionDetailDAO;
-import com.zhouq.sparkproject.dao.ISessionRandomExtractDAO;
-import com.zhouq.sparkproject.dao.ITaskDao;
+import com.zhouq.sparkproject.dao.*;
 
 /**
  * DAO 工厂类
@@ -46,4 +43,11 @@ public class DAOFactory {
         return new SessionDetailDAOImpl();
     }
 
+    /**
+     * 获取 ITop10CategoryDAO
+     * @return
+     */
+    public static ITop10CategoryDAO getTop10CategoryDAO() {
+        return new Top10CategoryDaoImpl();
+    }
 }

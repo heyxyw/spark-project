@@ -4,15 +4,9 @@ import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Optional;
 import com.zhouq.sparkproject.conf.ConfigurationManager;
 import com.zhouq.sparkproject.constant.Constants;
-import com.zhouq.sparkproject.dao.ISessionAggrStatDAO;
-import com.zhouq.sparkproject.dao.ISessionDetailDAO;
-import com.zhouq.sparkproject.dao.ISessionRandomExtractDAO;
-import com.zhouq.sparkproject.dao.ITaskDao;
+import com.zhouq.sparkproject.dao.*;
 import com.zhouq.sparkproject.dao.impl.DAOFactory;
-import com.zhouq.sparkproject.domain.SessionAggrStat;
-import com.zhouq.sparkproject.domain.SessionDetail;
-import com.zhouq.sparkproject.domain.SessionRandomExtract;
-import com.zhouq.sparkproject.domain.Task;
+import com.zhouq.sparkproject.domain.*;
 import com.zhouq.sparkproject.test.MockData;
 import com.zhouq.sparkproject.util.DateUtils;
 import com.zhouq.sparkproject.util.ParamUtils;
@@ -193,6 +187,8 @@ public class UserVisitSessionAnalyzeSpark {
          *
          */
 
+
+        getTop10Category(taskId, session2AggrInfoRDD, sessionid2ActionRDD);
 
         //关闭Spark 上下文
         sc.close();
@@ -828,7 +824,6 @@ public class UserVisitSessionAnalyzeSpark {
         // 然后最后一步，是用抽取出来的sessionid，去join它们的访问行为明细数据，写入session表
 
         JavaPairRDD<String, String> extractSessionidsRDD = time2sessionsRDD.flatMapToPair(new PairFlatMapFunction<Tuple2<String, Iterable<String>>, String, String>() {
-
             @Override
             public Iterable<Tuple2<String, String>> call(Tuple2<String, Iterable<String>> tuple) throws Exception {
                 List<Tuple2<String, String>> extractSessionids =
@@ -923,9 +918,9 @@ public class UserVisitSessionAnalyzeSpark {
      * @param filteredSessionid2AggrInfoRDD
      * @param sessionid2actionRDD
      */
-    private static void getTop10Category(
-            JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD,
-            JavaPairRDD<String, Row> sessionid2actionRDD) {
+    private static void getTop10Category(long taskId,
+                                         JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD,
+                                         JavaPairRDD<String, Row> sessionid2actionRDD) {
 
         /**
          * 第一步:获取符合条件的 session 访问过的所有品类
@@ -981,6 +976,12 @@ public class UserVisitSessionAnalyzeSpark {
                 });
 
         /**
+         * 必须要对数据进行去重
+         * 不去重会出现重复的 categoryID 的情况。排序后也会出现重复的情况。
+         */
+        categoryidRDD = categoryidRDD.distinct();
+
+        /**
          * 第二步: 计算各品类的点击、下单和支付的次数
          */
         // 分别过滤出点击、下单和支付行为,然后通过map、reduceByKey 等算子来进行计算
@@ -993,7 +994,6 @@ public class UserVisitSessionAnalyzeSpark {
 
         // 计算各个品类的支付次数
         JavaPairRDD<Long, Long> payCategoryId2CountRDD = getPayCategoryId2CountRDD(sessionid2detailRDD);
-
 
         /**
          * 第三步:join 各品类与它的点击、下单和支付的次数
@@ -1042,8 +1042,28 @@ public class UserVisitSessionAnalyzeSpark {
          * 第六步，用take（10） 去除top 10取出热门商品，写入mysql
          */
 
+        ITop10CategoryDAO top10CategoryDAO = DAOFactory.getTop10CategoryDAO();
 
+        List<Tuple2<CategorySortKey, String>> top10CategoryList = sortedCategorycountRDD.take(10);
 
+        for (Tuple2<CategorySortKey, String> tuple2 : top10CategoryList) {
+            String countInfo = tuple2._2;
+
+            long categoryid = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_CATEGORY_ID));
+            long clickCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_CLICK_COUNT));
+            long orderCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_ORDER_COUNT));
+            long payCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_PAY_COUNT));
+
+            Top10Category category = new Top10Category();
+
+            category.setTaskid(taskId);
+            category.setCategoryid(categoryid);
+            category.setClickCount(clickCount);
+            category.setOrderCount(orderCount);
+            category.setPayCount(payCount);
+
+            top10CategoryDAO.insert(category);
+        }
 
     }
 

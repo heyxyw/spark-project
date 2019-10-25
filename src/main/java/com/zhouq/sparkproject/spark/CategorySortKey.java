@@ -2,6 +2,8 @@ package com.zhouq.sparkproject.spark;
 
 import scala.math.Ordered;
 
+import java.io.Serializable;
+
 /**
  * 品类二次排序
  * 封装你要进行排序算法需要的几个字段：点击次数、下单次数和支付次数
@@ -14,7 +16,7 @@ import scala.math.Ordered;
  * @Author: zhouq
  * @Date: 2019/10/24
  */
-public class CategorySortKey implements Ordered<CategorySortKey> {
+public class CategorySortKey implements Ordered<CategorySortKey>, Serializable {
     private long clickCount;
     private long orderCount;
     private long payCount;
