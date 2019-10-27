@@ -1339,6 +1339,62 @@ public class UserVisitSessionAnalyzeSpark {
 
         JavaPairRDD<Long, Long> top10CategoryIdRDD = sc.parallelizePairs(top10CategoryIdList);
 
+        /**
+         * 第二步：计算top10各品类被session 点击的次数
+         */
+
+        JavaPairRDD<String, Iterable<Row>> sessionid2detailsRDD = sessionid2detailRDD.groupByKey();
+
+        JavaPairRDD<Long, String> categoryid2sessionCountRDD = sessionid2detailsRDD.flatMapToPair(new PairFlatMapFunction<Tuple2<String, Iterable<Row>>, Long, String>() {
+            @Override
+            public Iterable<Tuple2<Long, String>> call(
+                    Tuple2<String, Iterable<Row>> tuple) throws Exception {
+
+                String sessionId = tuple._1;
+                Iterator<Row> iterator = tuple._2.iterator();
+
+                //用来存放每个每个品类的点击次数
+                Map<Long, Long> categoryCountMap = new HashMap<>();
+
+                // 计算出该session 对每个品类的点击次数
+                while (iterator.hasNext()) {
+                    Row row = iterator.next();
+                    if (row.get(6) != null) {
+                        long categoryId = row.getLong(6);
+                        Long count = categoryCountMap.get(categoryId);
+                        if (count == null) {
+                            count = 0L;
+                        }
+
+                        count++;
+                        categoryCountMap.put(categoryId, count);
+                    }
+                }
+
+                //返回结果<categoryid,session:count> 格式
+
+                List<Tuple2<Long, String>> list = new ArrayList<>();
+
+                for (Map.Entry<Long, Long> categoryCountEntry : categoryCountMap.entrySet()) {
+                    Long categoryid = categoryCountEntry.getKey();
+                    Long count = categoryCountEntry.getValue();
+                    String value = sessionId + "," + count;
+                    list.add(new Tuple2<>(categoryid, value));
+                }
+                return list;
+            }
+        });
+
+        // 与 top10categoryidRDD  进行join 得到 top10 热门品类被每个session 点击的次数
+        JavaPairRDD<Long, String> top10categorySessionCountRDD = top10CategoryIdRDD
+                .join(categoryid2sessionCountRDD)
+                .mapToPair(new PairFunction<Tuple2<Long, Tuple2<Long, String>>, Long, String>() {
+                    @Override
+                    public Tuple2<Long, String> call(Tuple2<Long, Tuple2<Long, String>> tuple) throws Exception {
+                        return new Tuple2<>(tuple._1, tuple._2._2);
+                    }
+                });
+
 
     }
 
