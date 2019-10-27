@@ -1459,7 +1459,7 @@ public class UserVisitSessionAnalyzeSpark {
                 });
 
         /**
-         * 第四步：获取top10 活跃数据，写入mysql
+         * 第四步：获取top10 活跃session 数据，写入mysql
          */
 
         JavaPairRDD<String, Tuple2<String, Row>> sessionDetailRDD = top10sessionRDD.join(sessionid2detailRDD);
