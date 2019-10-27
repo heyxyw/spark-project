@@ -1396,6 +1396,98 @@ public class UserVisitSessionAnalyzeSpark {
                 });
 
 
+        /**
+         * 第三步：分组取topN 算法实现，获取每个品类的top10 活跃用户
+         */
+
+        JavaPairRDD<Long, Iterable<String>> top10CategorySessionCountsRDD =
+                top10categorySessionCountRDD.groupByKey();
+
+        JavaPairRDD<String, String> top10sessionRDD = top10CategorySessionCountsRDD.flatMapToPair(
+                new PairFlatMapFunction<Tuple2<Long, Iterable<String>>, String, String>() {
+                    @Override
+                    public Iterable<Tuple2<String, String>> call(Tuple2<Long, Iterable<String>> tuple) throws Exception {
+                        long categoryid = tuple._1;
+
+                        Iterator<String> iterator = tuple._2.iterator();
+
+                        //定义取topN 的排序数组,核心算法！！！
+                        String[] top10Sessions = new String[10];
+                        while (iterator.hasNext()) {
+                            String sessionCount = iterator.next();
+                            long count = Long.valueOf(sessionCount.split(",")[1]);
+                            // 遍历数组
+                            for (int i = 0; i < top10Sessions.length; i++) {
+                                //如果当前i 位没有数据，那么就直接将i 位的数据赋值位当前sessionCount
+                                if (top10Sessions[i] == null) {
+                                    top10Sessions[i] = sessionCount;
+                                } else {
+                                    long _count = Long.valueOf(top10Sessions[i].split(",")[1]);
+                                    //如果sessioncount 比i 位的sessioncount 要大
+                                    if (count > _count) {
+                                        // 从排序数组最后一位开始到i 位，所有的数据往后挪一位
+                                        for (int j = 9; j > i; j--) {
+                                            top10Sessions[j] = top10Sessions[j - 1];
+                                        }
+                                        //将 i 位的数据赋值位 sessionCount
+                                        top10Sessions[i] = sessionCount;
+                                        break;
+                                    }
+
+                                    //如果小，继续进行外层的 for 循环 。
+                                }
+                            }
+                        }
+
+                        // 将数据写入mysql 表
+
+                        List<Tuple2<String, String>> list = new ArrayList<>();
+
+                        ITop10SessionDAO top10SessionDAO = DAOFactory.getTop10SessionDAO();
+                        for (String sessionCount : top10Sessions) {
+                            String sessionid = sessionCount.split(",")[0];
+                            long count = Long.valueOf(sessionCount.split(",")[1]);
+
+                            Top10Session top10Session = new Top10Session(taskId, categoryid, sessionid, count);
+                            top10SessionDAO.insert(top10Session);
+
+                            //放入 list
+                            list.add(new Tuple2<>(sessionid, sessionid));
+                        }
+                        return list;
+                    }
+                });
+
+        /**
+         * 第四步：获取top10 活跃数据，写入mysql
+         */
+
+        JavaPairRDD<String, Tuple2<String, Row>> sessionDetailRDD = top10sessionRDD.join(sessionid2detailRDD);
+        sessionDetailRDD.foreach(new VoidFunction<Tuple2<String, Tuple2<String, Row>>>() {
+            @Override
+            public void call(Tuple2<String, Tuple2<String, Row>> tuple) throws Exception {
+                Row row = tuple._2._2;
+
+                SessionDetail sessionDetail = new SessionDetail();
+
+                sessionDetail.setTaskid(taskId);
+                sessionDetail.setUserid(row.getLong(0));
+                sessionDetail.setSessionid(row.getString(1));
+                sessionDetail.setPageid(row.getLong(2));
+                sessionDetail.setActionTime(row.getString(3));
+                sessionDetail.setSearchKeyword(row.getString(4));
+                sessionDetail.setClickCategoryId(row.getLong(5));
+                sessionDetail.setClickProductId(row.getLong(6));
+                sessionDetail.setOrderCategoryIds(row.getString(7));
+                sessionDetail.setOrderProductIds(row.getString(8));
+                sessionDetail.setPayCategoryIds(row.getString(9));
+                sessionDetail.setPayProductIds(row.getString(11));
+
+                ISessionDetailDAO sessionDetailDAO = DAOFactory.getSessionDetailDAO();
+                sessionDetailDAO.insert(sessionDetail);
+            }
+        });
+
     }
 
 }

@@ -45,9 +45,19 @@ public class DAOFactory {
 
     /**
      * 获取 ITop10CategoryDAO
+     *
      * @return
      */
     public static ITop10CategoryDAO getTop10CategoryDAO() {
         return new Top10CategoryDaoImpl();
+    }
+
+    /**
+     * 获取 ITop10SessionDAO
+     *
+     * @return
+     */
+    public static ITop10SessionDAO getTop10SessionDAO() {
+        return new Top10SessionDAOImpl();
     }
 }
