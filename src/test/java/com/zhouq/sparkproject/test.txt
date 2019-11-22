@@ -1,0 +1,1 @@
+加点东西，测试 git log --abbrew-commit master..develop/00:1 
